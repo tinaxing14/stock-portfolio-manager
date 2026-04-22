@@ -42,8 +42,18 @@ function advanceDate(isoDate: string, frequency: string): string {
   switch (frequency) {
     case 'weekly':    d.setDate(d.getDate() + 7); break;
     case 'biweekly':  d.setDate(d.getDate() + 14); break;
-    case 'monthly':   d.setMonth(d.getMonth() + 1); break;
-    case 'quarterly': d.setMonth(d.getMonth() + 3); break;
+    case 'monthly': {
+      d.setMonth(d.getMonth() + 1);
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      if (d.getDate() > lastDay) d.setDate(lastDay);
+      break;
+    }
+    case 'quarterly': {
+      d.setMonth(d.getMonth() + 3);
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      if (d.getDate() > lastDay) d.setDate(lastDay);
+      break;
+    }
   }
   return d.toISOString();
 }

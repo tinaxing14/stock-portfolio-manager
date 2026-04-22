@@ -68,6 +68,14 @@ db.exec(`
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    account_id  TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    value       REAL NOT NULL,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (account_id, date)
+  );
 `);
 
 // Migrations: add columns if missing

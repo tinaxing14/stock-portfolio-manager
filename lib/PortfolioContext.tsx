@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useCallback, useState } from 'react';
 import { Holding, HoldingWithValue, PortfolioGoal, Account, CategoryConfig, BrokerageConfig, AutoInvestment } from './types';
 import { generateId, enrichHoldings, buildColorMap } from './utils';
+import { useToast } from './ToastContext';
 
 interface State {
   accounts: Account[];
@@ -65,7 +66,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, holdings: enrichHoldings(raw) };
     }
     case 'UPSERT_HOLDING': {
-      // Used by auto-execute: adds the holding if new, updates it if it already exists
       const exists = state.holdings.some((h) => h.id === action.holding.id);
       const raw = exists
         ? state.holdings.map((h) => h.id === action.holding.id ? action.holding : toRaw(h))
@@ -123,6 +123,8 @@ interface ContextValue {
   colorMap: Record<string, string>;
   brokerageColorMap: Record<string, string>;
   isLoaded: boolean;
+  snapshotTick: number;
+  isAutoRefreshing: boolean;
   switchAccount: (id: string) => void;
   addHolding: (data: Omit<Holding, 'id' | 'accountId' | 'createdAt' | 'updatedAt'>) => void;
   updateHolding: (holding: Holding) => void;
@@ -146,6 +148,7 @@ const PortfolioContext = createContext<ContextValue | null>(null);
 const INITIAL_ACCOUNT = 'brokerage';
 
 export function PortfolioProvider({ children }: { children: React.ReactNode }) {
+  const { addToast } = useToast();
   const [state, dispatch] = useReducer(reducer, {
     accounts: [], currentAccountId: INITIAL_ACCOUNT,
     holdings: [], goals: [], autoInvestments: [],
@@ -156,6 +159,8 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
 
   const [totalNetWorth, setTotalNetWorth] = useState(0);
   const [accountTotals, setAccountTotals] = useState<{ accountId: string; value: number; percent: number }[]>([]);
+  const [snapshotTick, setSnapshotTick] = useState(0);
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
 
   const refreshTotalNetWorth = useCallback(() => {
     fetch('/api/portfolio-total')
@@ -166,7 +171,16 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
       });
   }, []);
 
-  // Load static data (accounts, categories, brokerages) + initial net worth once
+  const recordSnapshot = useCallback((accountId: string) => {
+    fetch(`/api/performance?accountId=${accountId}`, { method: 'POST' })
+      .then((r) => r.json())
+      .then(({ recorded }: { recorded: boolean }) => {
+        if (recorded) setSnapshotTick((t) => t + 1);
+      })
+      .catch(() => { /* silent — non-critical */ });
+  }, []);
+
+  // Load static data once
   useEffect(() => {
     Promise.all([
       fetch('/api/accounts').then((r) => r.json()),
@@ -178,8 +192,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     refreshTotalNetWorth();
   }, [refreshTotalNetWorth]);
 
-  // Load holdings + goals + auto-investments whenever account changes,
-  // then catch up any overdue scheduled investments
+  // Load account data + execute overdue investments + record snapshot
   useEffect(() => {
     const id = state.currentAccountId;
     Promise.all([
@@ -189,17 +202,64 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     ])
       .then(([holdings, goals, autoInvestments]) => {
         dispatch({ type: 'LOAD_ACCOUNT', holdings, goals, autoInvestments });
-        // Execute any overdue scheduled investments silently in the background
+        recordSnapshot(id);
         return fetch(`/api/auto-investments/execute?accountId=${id}&checkDue=true`, { method: 'POST' })
           .then((r) => r.json())
           .then(({ updatedHoldings, updatedInvestments }: { updatedHoldings: Holding[]; updatedInvestments: AutoInvestment[] }) => {
             for (const h of updatedHoldings) dispatch({ type: 'UPSERT_HOLDING', holding: h });
             for (const inv of updatedInvestments) dispatch({ type: 'UPDATE_AUTO_INVESTMENT', inv });
           })
-          .catch(() => { /* silent fail — investments will catch up next visit */ });
+          .catch(() => { /* silent — investments catch up next visit */ });
       })
-      .catch(() => dispatch({ type: 'LOAD_ACCOUNT', holdings: [], goals: [], autoInvestments: [] }));
+      .catch(() => {
+        dispatch({ type: 'LOAD_ACCOUNT', holdings: [], goals: [], autoInvestments: [] });
+        addToast('Failed to load account data. Please refresh the page.', 'error');
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAccountId]);
+
+  // Auto-refresh prices once per day per account so daily snapshots record automatically.
+  // Uses localStorage to ensure it only runs once per calendar day, not on every render.
+  useEffect(() => {
+    if (!state.isLoaded || state.holdings.length === 0) return;
+    const accountId = state.currentAccountId;
+    const key = `portfolio_auto_refresh_${accountId}`;
+    const today = new Date().toISOString().slice(0, 10);
+    if (typeof window !== 'undefined' && localStorage.getItem(key) === today) return;
+
+    setIsAutoRefreshing(true);
+    // Call price API directly here rather than via refreshPrices() to avoid stale-closure deps
+    const isCrypto = state.accounts.find((a) => a.id === accountId)?.type === 'crypto';
+    const tickers = [...new Set(state.holdings.map((h) => h.ticker))];
+    if (tickers.length === 0) { setIsAutoRefreshing(false); return; }
+
+    const endpoint = isCrypto ? '/api/crypto-quote' : '/api/quote';
+    fetch(`${endpoint}?symbols=${tickers.join(',')}`)
+      .then((r) => r.json())
+      .then(async (quotes: Record<string, { price: number | null }>) => {
+        const now = new Date().toISOString();
+        await Promise.all(state.holdings.map(async (h) => {
+          const price = quotes[h.ticker]?.price;
+          if (price == null || price === h.currentPrice) return;
+          const updated = { ...h, currentPrice: price, updatedAt: now };
+          dispatch({ type: 'UPDATE_HOLDING', holding: updated });
+          await fetch(`/api/holdings/${h.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated),
+          }).catch(() => {});
+        }));
+        refreshTotalNetWorth();
+        // Record today's snapshot with fresh prices
+        fetch(`/api/performance?accountId=${accountId}`, { method: 'POST' })
+          .then((r) => r.json())
+          .then(({ recorded }: { recorded: boolean }) => { if (recorded) setSnapshotTick((t) => t + 1); })
+          .catch(() => {});
+        if (typeof window !== 'undefined') localStorage.setItem(key, today);
+      })
+      .catch(() => {})
+      .finally(() => setIsAutoRefreshing(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isLoaded, state.currentAccountId]);
 
   const switchAccount = useCallback((id: string) => {
     dispatch({ type: 'SWITCH_ACCOUNT', accountId: id });
@@ -210,100 +270,127 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const holding: Holding = { ...data, id: generateId(), accountId: state.currentAccountId, createdAt: now, updatedAt: now };
     dispatch({ type: 'ADD_HOLDING', holding });
     fetch('/api/holdings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(holding) })
-      .then(() => refreshTotalNetWorth());
+      .then((r) => { if (!r.ok) throw new Error(); refreshTotalNetWorth(); })
+      .catch(() => addToast('Failed to save holding. Your changes may not have been saved.'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentAccountId, refreshTotalNetWorth]);
+  }, [state.currentAccountId, refreshTotalNetWorth, addToast]);
 
   const updateHolding = useCallback((holding: Holding) => {
     const updated = { ...holding, updatedAt: new Date().toISOString() };
     dispatch({ type: 'UPDATE_HOLDING', holding: updated });
     fetch(`/api/holdings/${holding.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
-      .then(() => refreshTotalNetWorth());
-  }, [refreshTotalNetWorth]);
+      .then((r) => { if (!r.ok) throw new Error(); refreshTotalNetWorth(); })
+      .catch(() => addToast('Failed to update holding. Your changes may not have been saved.'));
+  }, [refreshTotalNetWorth, addToast]);
 
   const deleteHolding = useCallback((id: string) => {
     dispatch({ type: 'DELETE_HOLDING', id });
     fetch(`/api/holdings/${id}`, { method: 'DELETE' })
-      .then(() => refreshTotalNetWorth());
-  }, [refreshTotalNetWorth]);
+      .then((r) => { if (!r.ok) throw new Error(); refreshTotalNetWorth(); })
+      .catch(() => addToast('Failed to delete holding.'));
+  }, [refreshTotalNetWorth, addToast]);
 
   const updateGoals = useCallback((goals: PortfolioGoal[]) => {
     dispatch({ type: 'SET_GOALS', goals });
-    fetch(`/api/goals?accountId=${state.currentAccountId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goals) });
+    fetch(`/api/goals?accountId=${state.currentAccountId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goals) })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to save goals.'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentAccountId]);
+  }, [state.currentAccountId, addToast]);
 
   const addAutoInvestment = useCallback((data: Omit<AutoInvestment, 'id' | 'accountId' | 'createdAt' | 'updatedAt'>) => {
     const now = new Date().toISOString();
     const inv: AutoInvestment = { ...data, id: generateId(), accountId: state.currentAccountId, createdAt: now, updatedAt: now };
     dispatch({ type: 'ADD_AUTO_INVESTMENT', inv });
-    fetch('/api/auto-investments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inv) });
+    fetch('/api/auto-investments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inv) })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to save auto-investment.'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentAccountId]);
+  }, [state.currentAccountId, addToast]);
 
   const updateAutoInvestment = useCallback((inv: AutoInvestment) => {
     const updated = { ...inv, updatedAt: new Date().toISOString() };
     dispatch({ type: 'UPDATE_AUTO_INVESTMENT', inv: updated });
-    fetch(`/api/auto-investments/${inv.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
-  }, []);
+    fetch(`/api/auto-investments/${inv.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to update auto-investment.'));
+  }, [addToast]);
 
   const deleteAutoInvestment = useCallback((id: string) => {
     dispatch({ type: 'DELETE_AUTO_INVESTMENT', id });
-    fetch(`/api/auto-investments/${id}`, { method: 'DELETE' });
-  }, []);
+    fetch(`/api/auto-investments/${id}`, { method: 'DELETE' })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to delete auto-investment.'));
+  }, [addToast]);
 
   const executeAutoInvestment = useCallback(async (id: string) => {
     const accountId = state.currentAccountId;
     const res = await fetch(`/api/auto-investments/execute?id=${id}&accountId=${accountId}`, { method: 'POST' });
+    if (!res.ok) { addToast('Failed to execute investment.'); return; }
     const { updatedHoldings, updatedInvestments } = await res.json() as { updatedHoldings: Holding[]; updatedInvestments: AutoInvestment[] };
-    for (const h of updatedHoldings) {
-      // If holding already exists in state, update it; otherwise add it
-      dispatch({ type: 'UPDATE_HOLDING', holding: h });
-    }
+    for (const h of updatedHoldings) dispatch({ type: 'UPDATE_HOLDING', holding: h });
     for (const inv of updatedInvestments) dispatch({ type: 'UPDATE_AUTO_INVESTMENT', inv });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentAccountId]);
+  }, [state.currentAccountId, addToast]);
 
   const addAccount = useCallback(async (name: string, type: Account['type'] = 'stock'): Promise<Account> => {
     const res = await fetch('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
+    if (!res.ok) { addToast('Failed to create account.'); throw new Error(); }
     const account: Account = await res.json();
     dispatch({ type: 'ADD_ACCOUNT', account });
     return account;
-  }, []);
+  }, [addToast]);
 
   const deleteAccount = useCallback((id: string) => {
     dispatch({ type: 'DELETE_ACCOUNT', id });
-    fetch(`/api/accounts/${id}`, { method: 'DELETE' });
-  }, []);
+    fetch(`/api/accounts/${id}`, { method: 'DELETE' })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to delete account.'));
+  }, [addToast]);
 
   const addCategory = useCallback((category: CategoryConfig) => {
     dispatch({ type: 'ADD_CATEGORY', category });
-    fetch('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(category) });
-  }, []);
+    fetch('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(category) })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to save category.'));
+  }, [addToast]);
 
   const deleteCategory = useCallback((name: string) => {
     dispatch({ type: 'DELETE_CATEGORY', name });
-    fetch(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  }, []);
+    fetch(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to delete category.'));
+  }, [addToast]);
 
   const addBrokerage = useCallback((brokerage: BrokerageConfig) => {
     dispatch({ type: 'ADD_BROKERAGE', brokerage });
-    fetch('/api/brokerages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(brokerage) });
-  }, []);
+    fetch('/api/brokerages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(brokerage) })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to save brokerage.'));
+  }, [addToast]);
 
   const deleteBrokerage = useCallback((name: string) => {
     dispatch({ type: 'DELETE_BROKERAGE', name });
-    fetch(`/api/brokerages/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  }, []);
+    fetch(`/api/brokerages/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .then((r) => { if (!r.ok) throw new Error(); })
+      .catch(() => addToast('Failed to delete brokerage.'));
+  }, [addToast]);
 
   const refreshPrices = useCallback(async (): Promise<{ updated: number; failed: string[] }> => {
     const holdings = state.holdings;
     const isCrypto = state.accounts.find((a) => a.id === state.currentAccountId)?.type === 'crypto';
     const tickers = [...new Set(holdings.map((h) => h.ticker))];
     const endpoint = isCrypto ? '/api/crypto-quote' : '/api/quote';
-    const quotes: Record<string, { price: number | null; name: string | null }> = await fetch(
-      `${endpoint}?symbols=${tickers.join(',')}`
-    ).then((r) => r.json());
+
+    let quotes: Record<string, { price: number | null; name: string | null }>;
+    try {
+      const res = await fetch(`${endpoint}?symbols=${tickers.join(',')}`);
+      if (!res.ok) throw new Error();
+      quotes = await res.json();
+    } catch {
+      addToast('Failed to fetch latest prices. Try again in a moment.');
+      return { updated: 0, failed: tickers };
+    }
 
     const failed: string[] = [];
     let updated = 0;
@@ -314,18 +401,26 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
         if (price === h.currentPrice) return;
         const updatedHolding = { ...h, currentPrice: price, updatedAt: new Date().toISOString() };
         dispatch({ type: 'UPDATE_HOLDING', holding: updatedHolding });
-        await fetch(`/api/holdings/${h.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedHolding),
-        });
-        updated++;
+        try {
+          const r = await fetch(`/api/holdings/${h.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedHolding),
+          });
+          if (!r.ok) throw new Error();
+          updated++;
+        } catch {
+          failed.push(h.ticker);
+        }
       })
     );
-    if (updated > 0) refreshTotalNetWorth();
+
+    if (updated > 0) {
+      refreshTotalNetWorth();
+      recordSnapshot(state.currentAccountId);
+    }
     return { updated, failed: [...new Set(failed)] };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentAccountId, refreshTotalNetWorth]);
+  }, [state.holdings, state.accounts, state.currentAccountId, refreshTotalNetWorth, recordSnapshot, addToast]);
 
   const isCryptoAccount = state.accounts.find((a) => a.id === state.currentAccountId)?.type === 'crypto';
 
@@ -335,6 +430,8 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
       isCryptoAccount,
       totalNetWorth,
       accountTotals,
+      snapshotTick,
+      isAutoRefreshing,
       switchAccount, addHolding, updateHolding, deleteHolding, updateGoals,
       addAutoInvestment, updateAutoInvestment, deleteAutoInvestment, executeAutoInvestment,
       addAccount, deleteAccount, addCategory, deleteCategory, addBrokerage, deleteBrokerage, refreshPrices,

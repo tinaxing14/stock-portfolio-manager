@@ -3,8 +3,10 @@
 import { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useToast } from '@/lib/ToastContext';
 
 export default function DashboardNotes({ accountId = 'dashboard' }: { accountId?: string }) {
+  const { addToast } = useToast();
   const noteKey = `notes-${accountId}`;
   const [content, setContent] = useState('');
   const [editing, setEditing] = useState(false);
@@ -16,9 +18,13 @@ export default function DashboardNotes({ accountId = 'dashboard' }: { accountId?
   useEffect(() => {
     setLoaded(false);
     fetch(`/api/notes?key=${noteKey}`)
-      .then((r) => r.json())
-      .then((d) => { setContent(d.content); setLoaded(true); });
-  }, [noteKey]);
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((d) => { setContent(d.content); setLoaded(true); })
+      .catch(() => {
+        addToast('Failed to load notes.', 'error');
+        setLoaded(true);
+      });
+  }, [noteKey, addToast]);
 
   useEffect(() => {
     if (editing && textareaRef.current) {
@@ -35,14 +41,20 @@ export default function DashboardNotes({ accountId = 'dashboard' }: { accountId?
 
   async function save() {
     setSaving(true);
-    await fetch(`/api/notes?key=${noteKey}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: draft }),
-    });
-    setContent(draft);
-    setEditing(false);
-    setSaving(false);
+    try {
+      const r = await fetch(`/api/notes?key=${noteKey}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: draft }),
+      });
+      if (!r.ok) throw new Error();
+      setContent(draft);
+      setEditing(false);
+    } catch {
+      addToast('Failed to save notes. Please try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function cancel() {

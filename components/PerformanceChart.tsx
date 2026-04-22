@@ -82,6 +82,20 @@ export default function PerformanceChart() {
   const currentValue = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].value : null;
   const currentDate  = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].date : null;
 
+  // Range delta: compare current value to first snapshot at/after the cutoff
+  const rangeStartValue = useMemo(() => {
+    const atOrAfter = allSnapshots.filter((s) => s.date >= cutoff);
+    return atOrAfter[0] ?? null;
+  }, [allSnapshots, cutoff]);
+
+  const delta = (currentValue !== null && rangeStartValue !== null && rangeStartValue.date !== currentDate)
+    ? currentValue - rangeStartValue.value
+    : null;
+  const deltaPercent = (delta !== null && rangeStartValue && rangeStartValue.value > 0)
+    ? (delta / rangeStartValue.value) * 100
+    : null;
+  const isUp = delta !== null && delta >= 0;
+
   const lineColor = '#6366f1';
 
   const yMin = useMemo(() => {
@@ -131,16 +145,29 @@ export default function PerformanceChart() {
         </div>
       </div>
 
-      {/* Stats: current value + range start value */}
+      {/* Stats */}
       {currentValue !== null && (
-        <div className="px-6 py-4 flex flex-wrap gap-8" style={{ borderBottom: '1px solid #f1f5f9' }}>
+        <div className="px-6 py-4 flex flex-wrap items-end gap-6" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          {/* Current value */}
           <div>
             <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">
               Current Value{currentDate ? ` · ${formatDateFull(currentDate)}` : ''}
             </p>
-            <p className="text-2xl font-bold text-slate-900 tabular-nums tracking-tight">
-              {formatCurrency(currentValue)}
-            </p>
+            <div className="flex items-baseline gap-3">
+              <p className="text-2xl font-bold text-slate-900 tabular-nums tracking-tight">
+                {formatCurrency(currentValue)}
+              </p>
+              {/* Inline delta badge */}
+              {delta !== null && deltaPercent !== null && (
+                <span className={`inline-flex items-center gap-1 text-sm font-semibold tabular-nums px-2 py-0.5 rounded-full ${
+                  isUp ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
+                }`}>
+                  {isUp ? '▲' : '▼'}
+                  {isUp ? '+' : ''}{formatCurrency(delta)}
+                  <span className="opacity-70 text-xs">({isUp ? '+' : ''}{deltaPercent.toFixed(2)}%)</span>
+                </span>
+              )}
+            </div>
           </div>
           <div className="ml-auto text-right self-center">
             <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">Snapshots</p>

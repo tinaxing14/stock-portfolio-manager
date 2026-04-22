@@ -33,6 +33,10 @@ function formatXLabel(date: string, range: Range): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
+function formatDateFull(date: string): string {
+  return new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
@@ -59,6 +63,7 @@ export default function PerformanceChart() {
 
   const cutoff = useMemo(() => getRangeCutoff(range), [range]);
 
+  // Chart data: prepend one point before the cutoff for visual continuity at the left edge
   const filtered = useMemo(() => {
     if (allSnapshots.length === 0) return [];
     const result = allSnapshots.filter((s) => s.date >= cutoff);
@@ -68,23 +73,22 @@ export default function PerformanceChart() {
     return result;
   }, [allSnapshots, cutoff]);
 
-  const statFirst = useMemo(() => {
-    const atOrAfter = allSnapshots.filter((s) => s.date >= cutoff);
-    return atOrAfter[0] ?? allSnapshots[0];
-  }, [allSnapshots, cutoff]);
-
   const chartData = useMemo(() =>
     filtered.map((s) => ({ label: formatXLabel(s.date, range), date: s.date, value: s.value })),
     [filtered, range]
   );
 
-  const first = statFirst?.value ?? 0;
-  const last = filtered[filtered.length - 1]?.value ?? 0;
-  const delta = last - first;
-  const deltaPercent = first > 0 ? (delta / first) * 100 : 0;
-  const isPositive = delta >= 0;
-  const lineColor = isPositive ? '#6366f1' : '#f43f5e';
-  const fillColor = isPositive ? '#6366f1' : '#f43f5e';
+  // Current value = latest snapshot
+  const currentValue = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].value : null;
+  const currentDate  = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].date : null;
+
+  // Starting value for the selected range = first snapshot AT or AFTER cutoff
+  const rangeStart = useMemo(() => {
+    const atOrAfter = allSnapshots.filter((s) => s.date >= cutoff);
+    return atOrAfter[0] ?? null;
+  }, [allSnapshots, cutoff]);
+
+  const lineColor = '#6366f1';
 
   const yMin = useMemo(() => {
     if (!chartData.length) return 0;
@@ -96,22 +100,17 @@ export default function PerformanceChart() {
     return Math.ceil(Math.max(...chartData.map((d) => d.value)) * 1.03);
   }, [chartData]);
 
-  const rangeLabel: Record<Range, string> = {
-    '1D': 'Today', '1W': 'Past week', '1M': 'Past month',
-    'YTD': 'Year to date', '1Y': 'Past year', '3Y': 'Past 3 years',
-  };
-
   return (
     <div
       className="bg-white rounded-2xl overflow-hidden"
       style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)' }}
     >
-      {/* Header bar */}
+      {/* Header */}
       <div className="px-6 pt-5 pb-4 flex flex-wrap items-start justify-between gap-4"
         style={{ borderBottom: '1px solid #f1f5f9' }}>
         <div>
           <div className="flex items-center gap-2.5">
-            <h2 className="text-base font-semibold text-slate-900">Account Performance</h2>
+            <h2 className="text-base font-semibold text-slate-900">Account Value</h2>
             {isAutoRefreshing && (
               <span className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
                 <LoadingSpinner size="xs" />
@@ -119,7 +118,7 @@ export default function PerformanceChart() {
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">Auto-updates daily · manual refresh records a snapshot</p>
+          <p className="text-xs text-slate-400 mt-0.5">Total value snapshot recorded daily</p>
         </div>
 
         {/* Range selector */}
@@ -129,9 +128,7 @@ export default function PerformanceChart() {
               key={r}
               onClick={() => setRange(r)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                range === r
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                range === r ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {r}
@@ -140,27 +137,30 @@ export default function PerformanceChart() {
         </div>
       </div>
 
-      {/* Stats row */}
-      {statFirst && filtered.length >= 2 && (
+      {/* Stats: current value + range start value */}
+      {currentValue !== null && (
         <div className="px-6 py-4 flex flex-wrap gap-8" style={{ borderBottom: '1px solid #f1f5f9' }}>
           <div>
-            <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">Current Value</p>
-            <p className="text-2xl font-bold text-slate-900 tabular-nums tracking-tight">{formatCurrency(last)}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">{rangeLabel[range]}</p>
-            <p className={`text-2xl font-bold tabular-nums tracking-tight ${isPositive ? 'text-emerald-600' : 'text-rose-500'}`}>
-              {isPositive ? '+' : ''}{formatCurrency(delta)}
-              <span className={`text-sm font-semibold ml-2 px-2 py-0.5 rounded-full ${
-                isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
-              }`}>
-                {isPositive ? '+' : ''}{deltaPercent.toFixed(2)}%
-              </span>
+            <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">
+              Current Value{currentDate ? ` · ${formatDateFull(currentDate)}` : ''}
+            </p>
+            <p className="text-2xl font-bold text-slate-900 tabular-nums tracking-tight">
+              {formatCurrency(currentValue)}
             </p>
           </div>
+          {rangeStart && rangeStart.date !== currentDate && (
+            <div>
+              <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">
+                {range} ago · {formatDateFull(rangeStart.date)}
+              </p>
+              <p className="text-2xl font-bold text-slate-500 tabular-nums tracking-tight">
+                {formatCurrency(rangeStart.value)}
+              </p>
+            </div>
+          )}
           <div className="ml-auto text-right self-center">
-            <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">Tracked</p>
-            <p className="text-sm font-semibold text-slate-600">{filtered.length} days</p>
+            <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">Snapshots</p>
+            <p className="text-sm font-semibold text-slate-600">{allSnapshots.length} days recorded</p>
           </div>
         </div>
       )}
@@ -179,17 +179,19 @@ export default function PerformanceChart() {
               </svg>
             </div>
             <div>
-              <p className="text-slate-700 font-semibold text-sm">Building performance history</p>
+              <p className="text-slate-700 font-semibold text-sm">Building value history</p>
               <p className="text-slate-400 text-xs mt-1 max-w-xs">
-                {allSnapshots.length === 1
-                  ? 'A snapshot is recorded daily. Come back tomorrow to see your first trend line.'
+                {allSnapshots.length === 0
+                  ? 'A snapshot is recorded daily when you open the app.'
+                  : allSnapshots.length === 1
+                  ? 'Come back tomorrow to see your first trend line.'
                   : 'Try a wider time range to see more history.'}
               </p>
             </div>
             {allSnapshots.length >= 1 && (
               <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs text-slate-600">
                 Latest: <span className="font-semibold tabular-nums">{formatCurrency(allSnapshots[allSnapshots.length - 1].value)}</span>
-                <span className="text-slate-400 ml-1.5">on {allSnapshots[allSnapshots.length - 1].date}</span>
+                <span className="text-slate-400 ml-1.5">on {formatDateFull(allSnapshots[allSnapshots.length - 1].date)}</span>
               </div>
             )}
           </div>
@@ -197,9 +199,9 @@ export default function PerformanceChart() {
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <defs>
-                <linearGradient id="perf-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={fillColor} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={fillColor} stopOpacity={0} />
+                <linearGradient id="value-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={lineColor} stopOpacity={0.15} />
+                  <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -224,7 +226,7 @@ export default function PerformanceChart() {
                 dataKey="value"
                 stroke={lineColor}
                 strokeWidth={2.5}
-                fill="url(#perf-fill)"
+                fill="url(#value-fill)"
                 dot={chartData.length <= 10 ? { r: 3.5, fill: lineColor, strokeWidth: 0 } : false}
                 activeDot={{ r: 5, strokeWidth: 2, stroke: 'white', fill: lineColor }}
               />

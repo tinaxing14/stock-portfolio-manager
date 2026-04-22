@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Holding } from '@/lib/types';
 import { usePortfolio } from '@/lib/PortfolioContext';
 import { formatCurrency } from '@/lib/utils';
+import LoadingSpinner from './LoadingSpinner';
 
 interface Props {
   holding?: Holding | null;
@@ -15,6 +16,12 @@ type PriceState =
   | { status: 'fetching' }
   | { status: 'ok'; price: number }
   | { status: 'error'; message: string };
+
+const CloseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
 
 export default function HoldingFormModal({ holding, onClose }: Props) {
   const { addHolding, updateHolding, categories, brokerages, isCryptoAccount } = usePortfolio();
@@ -40,10 +47,7 @@ export default function HoldingFormModal({ holding, onClose }: Props) {
 
   const fetchPrice = useCallback(async (ticker: string) => {
     const t = ticker.trim().toUpperCase();
-    if (!t || t === 'CASH') {
-      setPriceState({ status: 'idle' });
-      return;
-    }
+    if (!t || t === 'CASH') { setPriceState({ status: 'idle' }); return; }
     setPriceState({ status: 'fetching' });
     try {
       const endpoint = isCryptoAccount ? `/api/crypto-quote?symbols=${t}` : `/api/quote?symbols=${t}`;
@@ -65,9 +69,6 @@ export default function HoldingFormModal({ holding, onClose }: Props) {
     }
   }, [isCryptoAccount]);
 
-  // Auto-fetch live price when editing an existing holding.
-  // Depends on fetchPrice so it re-runs once isCryptoAccount resolves
-  // from its initial false (empty accounts state) to the real value.
   useEffect(() => {
     if (holding) fetchPrice(holding.ticker);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,134 +116,186 @@ export default function HoldingFormModal({ holding, onClose }: Props) {
     onClose();
   }
 
-  const field = (label: string, key: string, type = 'text', placeholder = '') => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
-      <input
-        type={type}
-        value={(form as any)[key]}
-        onChange={(e) => set(key, e.target.value)}
-        placeholder={placeholder}
-        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors[key] ? 'border-rose-400' : 'border-slate-200'}`}
-      />
-      {errors[key] && <p className="text-xs text-rose-500 mt-1">{errors[key]}</p>}
-    </div>
-  );
-
   const isCash = form.ticker.trim().toUpperCase() === 'CASH';
+
+  const inputClass = (hasError: boolean) =>
+    `w-full border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all bg-white ${
+      hasError ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+    }`;
+
+  const labelClass = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
 
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-slate-800">
-            {isEdit ? 'Edit' : 'Add'} {isCryptoAccount ? 'Crypto Asset' : 'Holding'}
-          </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Symbol / Ticker + fetch price */}
+      <div
+        className="bg-white rounded-2xl w-full max-w-md overflow-hidden"
+        style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.06)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: '1px solid #f1f5f9' }}>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              {isCryptoAccount ? 'Crypto Symbol' : 'Ticker Symbol'}
-            </label>
+            <h2 className="text-base font-bold text-slate-900">
+              {isEdit ? 'Edit' : 'Add'} {isCryptoAccount ? 'Crypto Asset' : 'Holding'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {isEdit ? 'Update position details' : `Enter details for your new ${isCryptoAccount ? 'crypto' : 'stock'} position`}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+
+        {/* Form body */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {/* Ticker + Get Price */}
+          <div>
+            <label className={labelClass}>{isCryptoAccount ? 'Crypto Symbol' : 'Ticker Symbol'}</label>
             <div className="flex gap-2">
               <input
                 value={form.ticker}
                 onChange={(e) => set('ticker', e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); fetchPrice(form.ticker); } }}
-                placeholder={isCryptoAccount ? 'e.g. BTC, ETH, SOL' : 'e.g. VOO'}
-                className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase ${errors.ticker ? 'border-rose-400' : 'border-slate-200'}`}
+                placeholder={isCryptoAccount ? 'e.g. BTC, ETH, SOL' : 'e.g. VOO, AAPL'}
+                maxLength={20}
+                className={`flex-1 border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all uppercase font-semibold tracking-wider ${errors.ticker ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'}`}
               />
               {!isCash && (
                 <button
                   type="button"
                   onClick={() => fetchPrice(form.ticker)}
                   disabled={!form.ticker.trim() || priceState.status === 'fetching'}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                  className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all whitespace-nowrap"
                 >
                   {priceState.status === 'fetching' ? (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin" />
-                      Fetching...
-                    </span>
+                    <><LoadingSpinner size="xs" /> Fetching…</>
                   ) : 'Get Price'}
                 </button>
               )}
             </div>
-            {errors.ticker && <p className="text-xs text-rose-500 mt-1">{errors.ticker}</p>}
+            {errors.ticker && <p className="text-xs text-rose-500 mt-1.5 font-medium">{errors.ticker}</p>}
           </div>
 
-          {/* Live price display */}
+          {/* Live price pill */}
           {!isCash && (
-            <div className={`rounded-lg px-3 py-2.5 text-sm border ${
+            <div className={`rounded-xl px-4 py-3 text-sm flex items-center gap-2.5 ${
               priceState.status === 'ok'
-                ? 'bg-emerald-50 border-emerald-200'
+                ? 'bg-emerald-50 border border-emerald-100'
                 : priceState.status === 'error'
-                ? 'bg-rose-50 border-rose-200'
-                : 'bg-slate-50 border-slate-200'
+                ? 'bg-rose-50 border border-rose-100'
+                : 'bg-slate-50 border border-slate-100'
             }`}>
               {priceState.status === 'ok' && (
-                <span className="text-emerald-700 font-medium">
-                  Live price: {formatCurrency(priceState.price)}
-                </span>
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="text-emerald-700 font-semibold">Live price: {formatCurrency(priceState.price)}</span>
+                </>
               )}
               {priceState.status === 'error' && (
-                <span className="text-rose-600">{priceState.message}</span>
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                  <span className="text-rose-600">{priceState.message}</span>
+                </>
               )}
               {priceState.status === 'fetching' && (
-                <span className="text-slate-400">Fetching live price...</span>
+                <><LoadingSpinner size="xs" /><span className="text-slate-400">Fetching live price…</span></>
               )}
               {priceState.status === 'idle' && (
-                <span className="text-slate-400">
-                  Enter a {isCryptoAccount ? 'symbol' : 'ticker'} and click Get Price
-                </span>
+                <span className="text-slate-400">Enter a {isCryptoAccount ? 'symbol' : 'ticker'} and click Get Price</span>
               )}
             </div>
           )}
-          {errors.price && <p className="text-xs text-rose-500 -mt-2">{errors.price}</p>}
+          {errors.price && <p className="text-xs text-rose-500 -mt-2 font-medium">{errors.price}</p>}
 
-          {field('Name', 'name', 'text', isCryptoAccount ? 'e.g. Bitcoin' : 'e.g. Vanguard S&P 500')}
-          {field(isCryptoAccount ? 'Units / Coins' : 'Shares', 'shares', 'number', '0.00000000')}
+          {/* Name */}
+          <div>
+            <label className={labelClass}>Name</label>
+            <input
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder={isCryptoAccount ? 'e.g. Bitcoin' : 'e.g. Vanguard S&P 500 ETF'}
+              maxLength={100}
+              className={inputClass(!!errors.name)}
+            />
+            {errors.name && <p className="text-xs text-rose-500 mt-1.5 font-medium">{errors.name}</p>}
+          </div>
 
+          {/* Shares */}
+          <div>
+            <label className={labelClass}>{isCryptoAccount ? 'Units / Coins' : 'Shares'}</label>
+            <input
+              type="number"
+              value={form.shares}
+              onChange={(e) => set('shares', e.target.value)}
+              placeholder="0.00"
+              step="any"
+              className={inputClass(!!errors.shares)}
+            />
+            {errors.shares && <p className="text-xs text-rose-500 mt-1.5 font-medium">{errors.shares}</p>}
+          </div>
+
+          {/* Category + Sub-category */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
+              <label className={labelClass}>Category</label>
               <select
                 value={form.category}
                 onChange={(e) => set('category', e.target.value)}
-                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors.category ? 'border-rose-400' : 'border-slate-200'}`}
+                className={inputClass(!!errors.category)}
               >
-                <option value="">Select category...</option>
+                <option value="">Select…</option>
                 {categories.map((c) => <option key={c.name}>{c.name}</option>)}
               </select>
-              {errors.category && <p className="text-xs text-rose-500 mt-1">{errors.category}</p>}
+              {errors.category && <p className="text-xs text-rose-500 mt-1.5 font-medium">{errors.category}</p>}
             </div>
-            {field('Sub-Category', 'subCategory', 'text', 'e.g. Large Cap')}
+            <div>
+              <label className={labelClass}>Sub-Category</label>
+              <input
+                value={form.subCategory}
+                onChange={(e) => set('subCategory', e.target.value)}
+                placeholder="e.g. Large Cap"
+                maxLength={100}
+                className={inputClass(false)}
+              />
+            </div>
           </div>
 
+          {/* Brokerage */}
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Brokerage</label>
+            <label className={labelClass}>Brokerage</label>
             <select
               value={form.brokerage}
               onChange={(e) => set('brokerage', e.target.value)}
-              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${errors.brokerage ? 'border-rose-400' : 'border-slate-200'}`}
+              className={inputClass(!!errors.brokerage)}
             >
-              <option value="">Select brokerage...</option>
+              <option value="">Select…</option>
               {brokerages.map((b) => <option key={b.name}>{b.name}</option>)}
             </select>
-            {errors.brokerage && <p className="text-xs text-rose-500 mt-1">{errors.brokerage}</p>}
+            {errors.brokerage && <p className="text-xs text-rose-500 mt-1.5 font-medium">{errors.brokerage}</p>}
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 border border-slate-200 rounded-lg py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+          {/* Actions */}
+          <div className="flex gap-3 pt-2" style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.25rem' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 border border-slate-200 rounded-xl py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
               Cancel
             </button>
-            <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2 text-sm font-medium transition-colors">
+            <button
+              type="submit"
+              className="flex-1 text-white rounded-xl py-2.5 text-sm font-bold transition-all"
+              style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}
+            >
               {isEdit ? 'Save Changes' : 'Add Holding'}
             </button>
           </div>

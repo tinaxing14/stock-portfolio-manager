@@ -37,7 +37,7 @@ function buildSubCategorySlices(holdings: HoldingWithValue[], category: string):
 
 const renderActiveShape = (props: any) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-  return <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 6}
+  return <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 7}
     startAngle={startAngle} endAngle={endAngle} fill={fill} />;
 };
 
@@ -46,13 +46,13 @@ function PieTooltip({ active, payload, total }: { active?: boolean; payload?: an
   const { name, value, fill } = payload[0].payload;
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-sm">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: fill }} />
-        <span className="font-semibold text-slate-800">{name}</span>
+    <div className="bg-white border border-slate-100 rounded-xl shadow-xl px-3.5 py-2.5 text-sm">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: fill }} />
+        <span className="font-bold text-slate-900">{name}</span>
       </div>
-      <div className="text-slate-600">{formatCurrency(value)}</div>
-      <div className="text-slate-400 text-xs">{pct.toFixed(1)}% of portfolio</div>
+      <div className="text-slate-700 font-semibold tabular-nums">{formatCurrency(value)}</div>
+      <div className="text-slate-400 text-xs mt-0.5">{pct.toFixed(1)}% of portfolio</div>
     </div>
   );
 }
@@ -70,40 +70,49 @@ export default function DrilldownPieChart({ holdings }: { holdings: HoldingWithV
 
   if (!investmentHoldings.length) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-6 flex items-center justify-center h-64">
-        <p className="text-slate-400 text-sm">No holdings yet</p>
+      <div className="bg-white rounded-2xl p-6 flex flex-col items-center justify-center h-64 gap-3"
+        style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)' }}>
+        <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
+          </svg>
+        </div>
+        <p className="text-slate-400 text-sm font-medium">No holdings yet</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
+    <div className="bg-white rounded-2xl overflow-hidden"
+      style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)' }}>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="px-6 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid #f1f5f9' }}>
         {selectedCategory && (
-          <button onClick={() => { setSelectedCategory(null); setActiveIndex(null); }}
-            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-            ← All
+          <button
+            onClick={() => { setSelectedCategory(null); setActiveIndex(null); }}
+            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
           </button>
         )}
-        {selectedCategory && <span className="text-slate-300 text-xs">/</span>}
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-          {selectedCategory ? `${selectedCategory} — Sub-Categories` : 'Current Allocation'}
+        <h2 className="text-sm font-bold text-slate-800">
+          {selectedCategory ? `${selectedCategory} — Detail` : 'Current Allocation'}
         </h2>
         {!selectedCategory && (
-          <span className="ml-auto text-xs text-slate-400">Click slice to drill down</span>
+          <span className="ml-auto text-xs text-slate-400">Click a slice to drill down</span>
         )}
       </div>
 
-      <div className="flex gap-4">
+      <div className="p-5 flex gap-4">
         {/* Pie */}
-        <div className="flex-shrink-0 w-48">
-          <ResponsiveContainer width="100%" height={192}>
+        <div className="shrink-0 w-44">
+          <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
                 data={data}
                 cx="50%" cy="50%"
-                innerRadius={50} outerRadius={85}
+                innerRadius={46} outerRadius={80}
                 paddingAngle={2}
                 dataKey="value"
                 activeShape={activeIndex !== null ? renderActiveShape : undefined}
@@ -125,37 +134,38 @@ export default function DrilldownPieChart({ holdings }: { holdings: HoldingWithV
         <div className="flex-1 min-w-0 overflow-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                <th className="text-left pb-2 font-semibold">
+              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <th className="text-left pb-2 font-bold text-slate-400 uppercase tracking-wider">
                   {selectedCategory ? 'Sub-Category' : 'Category'}
                 </th>
-                <th className="text-right pb-2 font-semibold">Value</th>
-                <th className="text-right pb-2 font-semibold">%</th>
+                <th className="text-right pb-2 font-bold text-slate-400 uppercase tracking-wider">Value</th>
+                <th className="text-right pb-2 font-bold text-slate-400 uppercase tracking-wider">%</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody>
               {data.map((row, i) => (
                 <tr
                   key={i}
-                  className={`${!selectedCategory ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                  className={`group ${!selectedCategory ? 'cursor-pointer' : ''} transition-colors hover:bg-slate-50`}
                   onClick={() => { if (!selectedCategory && row.name) setSelectedCategory(row.name); }}
+                  style={{ borderBottom: i < data.length - 1 ? '1px solid #f8fafc' : 'none' }}
                 >
-                  <td className="py-1.5 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: row.fill }} />
-                    <span className="truncate text-slate-700">{row.name}</span>
+                  <td className="py-2 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.fill }} />
+                    <span className="truncate text-slate-700 font-medium">{row.name}</span>
                   </td>
-                  <td className="py-1.5 text-right text-slate-700 font-medium">{formatCurrency(row.value)}</td>
-                  <td className="py-1.5 text-right text-slate-500 font-semibold">
-                    {((row.value / total) * 100).toFixed(1)}%
+                  <td className="py-2 text-right text-slate-700 font-semibold tabular-nums">{formatCurrency(row.value)}</td>
+                  <td className="py-2 text-right tabular-nums">
+                    <span className="text-slate-500 font-bold">{((row.value / total) * 100).toFixed(1)}%</span>
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-slate-200">
-                <td className="pt-2 text-slate-500 font-semibold">Total</td>
-                <td className="pt-2 text-right text-slate-700 font-semibold">{formatCurrency(total)}</td>
-                <td className="pt-2 text-right text-slate-500 font-semibold">100%</td>
+              <tr style={{ borderTop: '2px solid #f1f5f9' }}>
+                <td className="pt-2.5 text-slate-500 font-bold uppercase tracking-wide text-xs">Total</td>
+                <td className="pt-2.5 text-right text-slate-800 font-bold tabular-nums">{formatCurrency(total)}</td>
+                <td className="pt-2.5 text-right text-slate-500 font-bold">100%</td>
               </tr>
             </tfoot>
           </table>

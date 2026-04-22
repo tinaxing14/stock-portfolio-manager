@@ -120,7 +120,7 @@ export default function Sidebar() {
             <p className="text-3xl font-bold text-white tabular-nums tracking-tight">{formatCurrency(totalNetWorth)}</p>
 
             {/* Account breakdown bars */}
-            {accountTotals.length > 1 && (
+            {accountTotals.length > 0 && (
               <div className="mt-3 space-y-2">
                 {accounts.map((a) => {
                   const entry = accountTotals.find((t) => t.accountId === a.id);

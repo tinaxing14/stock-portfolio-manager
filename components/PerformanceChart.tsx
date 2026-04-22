@@ -82,12 +82,6 @@ export default function PerformanceChart() {
   const currentValue = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].value : null;
   const currentDate  = allSnapshots.length > 0 ? allSnapshots[allSnapshots.length - 1].date : null;
 
-  // Starting value for the selected range = first snapshot AT or AFTER cutoff
-  const rangeStart = useMemo(() => {
-    const atOrAfter = allSnapshots.filter((s) => s.date >= cutoff);
-    return atOrAfter[0] ?? null;
-  }, [allSnapshots, cutoff]);
-
   const lineColor = '#6366f1';
 
   const yMin = useMemo(() => {
@@ -148,16 +142,6 @@ export default function PerformanceChart() {
               {formatCurrency(currentValue)}
             </p>
           </div>
-          {rangeStart && rangeStart.date !== currentDate && (
-            <div>
-              <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">
-                {range} ago · {formatDateFull(rangeStart.date)}
-              </p>
-              <p className="text-2xl font-bold text-slate-500 tabular-nums tracking-tight">
-                {formatCurrency(rangeStart.value)}
-              </p>
-            </div>
-          )}
           <div className="ml-auto text-right self-center">
             <p className="text-xs font-medium text-slate-400 mb-0.5 uppercase tracking-wide">Snapshots</p>
             <p className="text-sm font-semibold text-slate-600">{allSnapshots.length} days recorded</p>

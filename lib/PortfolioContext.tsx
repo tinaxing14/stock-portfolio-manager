@@ -5,6 +5,8 @@ import { Holding, HoldingWithValue, PortfolioGoal, Account, CategoryConfig, Brok
 import { generateId, enrichHoldings, buildColorMap } from './utils';
 import { useToast } from './ToastContext';
 
+type AccountSnapshot = { holdings: Holding[]; goals: PortfolioGoal[]; autoInvestments: AutoInvestment[] };
+
 interface State {
   accounts: Account[];
   currentAccountId: string;
@@ -16,6 +18,7 @@ interface State {
   colorMap: Record<string, string>;
   brokerageColorMap: Record<string, string>;
   isLoaded: boolean;
+  accountCache: Record<string, AccountSnapshot>;
 }
 
 type Action =
@@ -53,10 +56,32 @@ function reducer(state: State, action: Action): State {
         colorMap: buildColorMap(action.categories),
         brokerageColorMap: buildColorMap(action.brokerages),
       };
-    case 'LOAD_ACCOUNT':
-      return { ...state, holdings: enrichHoldings(action.holdings), goals: action.goals, autoInvestments: action.autoInvestments, isLoaded: true };
-    case 'SWITCH_ACCOUNT':
+    case 'LOAD_ACCOUNT': {
+      const cached: AccountSnapshot = { holdings: action.holdings, goals: action.goals, autoInvestments: action.autoInvestments };
+      return {
+        ...state,
+        holdings: enrichHoldings(action.holdings),
+        goals: action.goals,
+        autoInvestments: action.autoInvestments,
+        isLoaded: true,
+        accountCache: { ...state.accountCache, [state.currentAccountId]: cached },
+      };
+    }
+    case 'SWITCH_ACCOUNT': {
+      const cached = state.accountCache[action.accountId];
+      if (cached) {
+        // Serve cached data instantly; background fetch will update silently
+        return {
+          ...state,
+          currentAccountId: action.accountId,
+          holdings: enrichHoldings(cached.holdings),
+          goals: cached.goals,
+          autoInvestments: cached.autoInvestments,
+          isLoaded: true,
+        };
+      }
       return { ...state, currentAccountId: action.accountId, holdings: [], goals: [], autoInvestments: [], isLoaded: false };
+    }
     case 'ADD_HOLDING': {
       const raw = [...state.holdings.map(toRaw), action.holding];
       return { ...state, holdings: enrichHoldings(raw) };
@@ -155,6 +180,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     categories: [], brokerages: [],
     colorMap: {}, brokerageColorMap: {},
     isLoaded: false,
+    accountCache: {},
   });
 
   const [totalNetWorth, setTotalNetWorth] = useState(0);
@@ -180,14 +206,21 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
       .catch(() => { /* silent — non-critical */ });
   }, []);
 
-  // Load static data once
+  // Load static data once + pre-warm all account API routes so Turbopack compiles them early
   useEffect(() => {
     Promise.all([
       fetch('/api/accounts').then((r) => r.json()),
       fetch('/api/categories').then((r) => r.json()),
       fetch('/api/brokerages').then((r) => r.json()),
-    ]).then(([accounts, categories, brokerages]) => {
+    ]).then(([accounts, categories, brokerages]: [Account[], CategoryConfig[], BrokerageConfig[]]) => {
       dispatch({ type: 'INIT', accounts, categories, brokerages });
+      // Pre-fetch all other accounts in the background so routes are compiled before user switches
+      const otherIds = accounts.map((a: Account) => a.id).filter((id: string) => id !== INITIAL_ACCOUNT);
+      for (const id of otherIds) {
+        fetch(`/api/holdings?accountId=${id}`).catch(() => {});
+        fetch(`/api/goals?accountId=${id}`).catch(() => {});
+        fetch(`/api/auto-investments?accountId=${id}`).catch(() => {});
+      }
     });
     refreshTotalNetWorth();
   }, [refreshTotalNetWorth]);

@@ -227,14 +227,18 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const today = new Date().toISOString().slice(0, 10);
     if (typeof window !== 'undefined' && localStorage.getItem(key) === today) return;
 
+    // Mark as done immediately so a crash doesn't cause an infinite retry loop
+    if (typeof window !== 'undefined') localStorage.setItem(key, today);
+
     setIsAutoRefreshing(true);
-    // Call price API directly here rather than via refreshPrices() to avoid stale-closure deps
     const isCrypto = state.accounts.find((a) => a.id === accountId)?.type === 'crypto';
-    const tickers = [...new Set(state.holdings.map((h) => h.ticker))];
+    const tickers = [...new Set(state.holdings.map((h) => h.ticker).filter((t) => t !== 'CASH'))];
     if (tickers.length === 0) { setIsAutoRefreshing(false); return; }
 
     const endpoint = isCrypto ? '/api/crypto-quote' : '/api/quote';
-    fetch(`${endpoint}?symbols=${tickers.join(',')}`)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    fetch(`${endpoint}?symbols=${tickers.join(',')}`, { signal: controller.signal })
       .then((r) => r.json())
       .then(async (quotes: Record<string, { price: number | null }>) => {
         const now = new Date().toISOString();
@@ -249,15 +253,13 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
           }).catch(() => {});
         }));
         refreshTotalNetWorth();
-        // Record today's snapshot with fresh prices
         fetch(`/api/performance?accountId=${accountId}`, { method: 'POST' })
           .then((r) => r.json())
           .then(({ recorded }: { recorded: boolean }) => { if (recorded) setSnapshotTick((t) => t + 1); })
           .catch(() => {});
-        if (typeof window !== 'undefined') localStorage.setItem(key, today);
       })
       .catch(() => {})
-      .finally(() => setIsAutoRefreshing(false));
+      .finally(() => { clearTimeout(timeout); setIsAutoRefreshing(false); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isLoaded, state.currentAccountId]);
 

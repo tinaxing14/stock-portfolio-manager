@@ -37,6 +37,15 @@ export default function CashOverview({ holdings }: Props) {
   const cashPct = total > 0 ? (cashValue / total) * 100 : 0;
   const investedPct = total > 0 ? (investedValue / total) * 100 : 0;
 
+  const brokerageBreakdown = Object.entries(
+    holdings
+      .filter((h) => h.category !== 'Cash')
+      .reduce<Record<string, number>>((acc, h) => {
+        acc[h.brokerage] = (acc[h.brokerage] ?? 0) + h.totalValue;
+        return acc;
+      }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
   const pieData = [
     { name: 'Investments', value: investedValue, fill: '#6366f1' },
     { name: 'Cash', value: cashValue, fill: '#22c55e' },
@@ -158,6 +167,26 @@ export default function CashOverview({ holdings }: Props) {
               <span className="text-xs text-slate-400 tabular-nums">({investedPct.toFixed(1)}%)</span>
             </div>
           </div>
+
+          {/* Per-brokerage breakdown */}
+          {brokerageBreakdown.length > 0 && (
+            <div className="pl-5 space-y-2">
+              {brokerageBreakdown.map(([brokerage, value]) => (
+                <div key={brokerage} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1 h-3.5 rounded-full bg-indigo-200 shrink-0" />
+                    <span className="text-xs text-slate-500">{brokerage}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-700 tabular-nums">{formatCurrency(value)}</span>
+                    <span className="text-xs text-slate-400 tabular-nums">
+                      ({investedValue > 0 ? ((value / investedValue) * 100).toFixed(1) : '0.0'}%)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Total */}
           <div className="flex items-center justify-between pt-3.5" style={{ borderTop: '1px solid #f1f5f9' }}>

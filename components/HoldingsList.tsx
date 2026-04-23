@@ -53,6 +53,17 @@ export default function HoldingsList() {
   const [confirmDeleteBrokerage, setConfirmDeleteBrokerage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState<{ updated: number; failed: string[] } | null>(null);
+  const [sortCol, setSortCol] = useState<'value' | 'category' | 'brokerage'>('value');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  function toggleSort(col: 'value' | 'category' | 'brokerage') {
+    if (sortCol === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir(col === 'value' ? 'desc' : 'asc');
+    }
+  }
 
   const handleRefreshPrices = async () => {
     setRefreshing(true);
@@ -66,16 +77,24 @@ export default function HoldingsList() {
     }
   };
 
-  const filtered = holdings.filter((h) => {
-    if (h.category === 'Cash') return false;
-    const q = search.toLowerCase();
-    const bq = brokerageFilter.toLowerCase();
-    return (
-      (!q || h.ticker.toLowerCase().includes(q) || h.name.toLowerCase().includes(q)) &&
-      (category === 'All' || h.category === category) &&
-      (!bq || h.brokerage.toLowerCase().includes(bq))
-    );
-  });
+  const filtered = holdings
+    .filter((h) => {
+      if (h.category === 'Cash') return false;
+      const q = search.toLowerCase();
+      const bq = brokerageFilter.toLowerCase();
+      return (
+        (!q || h.ticker.toLowerCase().includes(q) || h.name.toLowerCase().includes(q)) &&
+        (category === 'All' || h.category === category) &&
+        (!bq || h.brokerage.toLowerCase().includes(bq))
+      );
+    })
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === 'value') cmp = a.totalValue - b.totalValue;
+      else if (sortCol === 'category') cmp = a.category.localeCompare(b.category);
+      else if (sortCol === 'brokerage') cmp = a.brokerage.localeCompare(b.brokerage);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
 
   const handleAddBrokerage = () => {
     const name = newBrokerage.trim();
@@ -269,9 +288,37 @@ export default function HoldingsList() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fafbfc' }}>
-                  {[isCryptoAccount ? 'Symbol' : 'Ticker', 'Name', isCryptoAccount ? 'Units' : 'Shares', 'Price', 'Value', '% Portfolio', 'Category', 'Sub-Category', 'Brokerage', ''].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
+                  {([
+                    isCryptoAccount ? 'Symbol' : 'Ticker',
+                    'Name',
+                    isCryptoAccount ? 'Units' : 'Shares',
+                    'Price',
+                    'Value',
+                    '% Portfolio',
+                    'Category',
+                    'Sub-Category',
+                    'Brokerage',
+                    '',
+                  ] as const).map((h) => {
+                    const sortKey = h === 'Value' ? 'value' : h === 'Category' ? 'category' : h === 'Brokerage' ? 'brokerage' : null;
+                    const active = sortKey && sortCol === sortKey;
+                    return sortKey ? (
+                      <th key={h}
+                        onClick={() => toggleSort(sortKey)}
+                        className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none"
+                        style={{ color: active ? '#6366f1' : '#94a3b8' }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {h}
+                          <span className="text-xs" style={{ opacity: active ? 1 : 0.35 }}>
+                            {active && sortDir === 'asc' ? '↑' : '↓'}
+                          </span>
+                        </span>
+                      </th>
+                    ) : (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>

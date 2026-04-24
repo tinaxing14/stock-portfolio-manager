@@ -40,7 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# database — stored in ~/.stock-portfolio/ to survive branch switches
+# real database — stored in ~/.stock-portfolio/ to survive branch switches
 data/portfolio.db
 data/portfolio.db-shm
 data/portfolio.db-wal
+# mock database WAL files (the .db itself is committed)
+data/mock-portfolio.db-shm
+data/mock-portfolio.db-wal

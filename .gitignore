@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# database — stored in ~/.stock-portfolio/ to survive branch switches
+data/portfolio.db
+data/portfolio.db-shm
+data/portfolio.db-wal

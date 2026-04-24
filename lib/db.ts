@@ -1,12 +1,19 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import os from 'os';
 import fs from 'fs';
 import { DEFAULT_CATEGORIES, DEFAULT_BROKERAGES, DEFAULT_ACCOUNTS, DEFAULT_GOALS } from './constants';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+// Use local data/portfolio.db if it exists (e.g. mockdata branch with committed db).
+// Otherwise store outside the git repo so branch switches never wipe data.
+const LOCAL_DB = path.join(process.cwd(), 'data', 'portfolio.db');
+const HOME_DB  = path.join(os.homedir(), '.stock-portfolio', 'portfolio.db');
+const DB_PATH  = fs.existsSync(LOCAL_DB) ? LOCAL_DB : HOME_DB;
 
-const db = new Database(path.join(DATA_DIR, 'portfolio.db'));
+const DATA_DIR = path.dirname(DB_PATH);
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
 // Core tables

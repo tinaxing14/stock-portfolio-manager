@@ -4,11 +4,15 @@ import os from 'os';
 import fs from 'fs';
 import { DEFAULT_CATEGORIES, DEFAULT_BROKERAGES, DEFAULT_ACCOUNTS, DEFAULT_GOALS } from './constants';
 
-// Use local data/portfolio.db if it exists (e.g. mockdata branch with committed db).
-// Otherwise store outside the git repo so branch switches never wipe data.
-const LOCAL_DB = path.join(process.cwd(), 'data', 'portfolio.db');
+// On main: always use HOME_DB (~/.stock-portfolio/portfolio.db), which lives
+// outside the git repo and is never touched by branch switches.
+// On mockdata/demo branches: set USE_LOCAL_DB=true in .env.local to opt into
+// the committed data/portfolio.db instead.
 const HOME_DB  = path.join(os.homedir(), '.stock-portfolio', 'portfolio.db');
-const DB_PATH  = fs.existsSync(LOCAL_DB) ? LOCAL_DB : HOME_DB;
+const LOCAL_DB = path.join(process.cwd(), 'data', 'portfolio.db');
+const DB_PATH  = (process.env.USE_LOCAL_DB === 'true' && fs.existsSync(LOCAL_DB))
+  ? LOCAL_DB
+  : HOME_DB;
 
 const DATA_DIR = path.dirname(DB_PATH);
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

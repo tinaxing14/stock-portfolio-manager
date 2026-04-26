@@ -14,23 +14,28 @@ export async function GET(request: Request) {
 
   const results: Record<string, { price: number | null; name: string | null }> = {};
 
-  await Promise.all(
-    symbols.map(async (symbol) => {
-      if (symbol === 'CASH') {
-        results[symbol] = { price: null, name: 'Cash' };
-        return;
-      }
-      try {
-        const quote = await yf.quote(symbol) as any;
-        results[symbol] = {
-          price: quote.regularMarketPrice ?? null,
-          name: quote.shortName ?? quote.longName ?? null,
-        };
-      } catch {
-        results[symbol] = { price: null, name: null };
-      }
-    })
-  );
+  // Fetch in small batches to avoid OOM — all-concurrent loads every response
+  // into heap simultaneously; batching of 3 keeps peak memory low.
+  const BATCH = 3;
+  for (let i = 0; i < symbols.length; i += BATCH) {
+    await Promise.all(
+      symbols.slice(i, i + BATCH).map(async (symbol) => {
+        if (symbol === 'CASH') {
+          results[symbol] = { price: null, name: 'Cash' };
+          return;
+        }
+        try {
+          const quote = await yf.quote(symbol) as any;
+          results[symbol] = {
+            price: quote.regularMarketPrice ?? null,
+            name: quote.shortName ?? quote.longName ?? null,
+          };
+        } catch {
+          results[symbol] = { price: null, name: null };
+        }
+      })
+    );
+  }
 
   return NextResponse.json(results);
 }

@@ -11,6 +11,7 @@ import ActionPlanTable from '@/components/ActionPlanTable';
 import AutoInvestmentTracker from '@/components/AutoInvestmentTracker';
 import DashboardNotes from '@/components/DashboardNotes';
 import PerformanceChart from '@/components/PerformanceChart';
+import TotalAllocationCard from '@/components/TotalAllocationCard';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function DashboardPage() {
@@ -50,6 +51,8 @@ export default function DashboardPage() {
       <PerformanceChart />
 
       <CashOverview holdings={holdings} />
+
+      <TotalAllocationCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DrilldownPieChart holdings={holdings} />

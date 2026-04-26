@@ -114,9 +114,20 @@ export default function Sidebar() {
             <span className="font-bold text-white text-base tracking-tight">Portfolio Tracker</span>
           </div>
 
-          {/* Net Worth */}
-          <div>
-            <p className="text-xs font-medium uppercase tracking-widest mb-1" style={{ color: '#4a6080' }}>Total Net Worth</p>
+          {/* Net Worth — click to go to Overview */}
+          <Link
+            href="/overview"
+            className="block rounded-xl transition-all duration-150 -mx-2 px-2 py-2 group"
+            style={pathname === '/overview' ? { background: 'rgba(99,102,241,0.08)' } : {}}
+            onMouseEnter={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(255,255,255,0.03)'; }}
+            onMouseLeave={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.background = 'transparent'; }}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-medium uppercase tracking-widest" style={{ color: '#4a6080' }}>Total Net Worth</p>
+              <svg className="opacity-0 group-hover:opacity-100 transition-opacity" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a6080" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </div>
             <p className="text-3xl font-bold text-white tabular-nums tracking-tight">{formatCurrency(totalNetWorth)}</p>
 
             {/* Account breakdown bars */}
@@ -149,24 +160,7 @@ export default function Sidebar() {
                 })}
               </div>
             )}
-
-            {/* Overview link */}
-            <Link
-              href="/overview"
-              className="mt-3 flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={pathname === '/overview'
-                ? { background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }
-                : { color: '#3a5070' }
-              }
-              onMouseEnter={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.color = '#7090a8'; }}
-              onMouseLeave={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.color = '#3a5070'; }}
-            >
-              <span>Overview</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </Link>
-          </div>
+          </Link>
         </div>
 
         {/* Account switcher */}

@@ -27,6 +27,7 @@ export default function HoldingFormModal({ holding, onClose }: Props) {
   const { addHolding, updateHolding, categories, brokerages, isCryptoAccount } = usePortfolio();
   const isEdit = !!holding;
   const overlayRef = useRef<HTMLDivElement>(null);
+  const mouseDownTarget = useRef<EventTarget | null>(null);
 
   const [form, setForm] = useState({
     ticker: holding?.ticker ?? '',
@@ -129,7 +130,8 @@ export default function HoldingFormModal({ holding, onClose }: Props) {
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-      onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
+      onMouseDown={(e) => { mouseDownTarget.current = e.target; }}
+      onClick={(e) => { if (e.target === overlayRef.current && mouseDownTarget.current === overlayRef.current) onClose(); }}
     >
       <div
         className="bg-white rounded-2xl w-full max-w-md overflow-hidden"

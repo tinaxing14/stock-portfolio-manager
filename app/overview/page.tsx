@@ -1,5 +1,6 @@
 'use client';
 
+import NonIraAllocationCard from '@/components/NonIraAllocationCard';
 import TotalAllocationCard from '@/components/TotalAllocationCard';
 
 export default function OverviewPage() {
@@ -10,6 +11,7 @@ export default function OverviewPage() {
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Portfolio Overview</h1>
       </div>
 
+      <NonIraAllocationCard />
       <TotalAllocationCard />
     </div>
   );

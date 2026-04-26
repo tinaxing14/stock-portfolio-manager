@@ -33,6 +33,7 @@ type Action =
   | { type: 'ADD_AUTO_INVESTMENT'; inv: AutoInvestment }
   | { type: 'UPDATE_AUTO_INVESTMENT'; inv: AutoInvestment }
   | { type: 'DELETE_AUTO_INVESTMENT'; id: string }
+  | { type: 'APPLY_AUTO_INVEST_RESULT'; accountId: string; updatedHoldings: Holding[]; updatedInvestments: AutoInvestment[] }
   | { type: 'ADD_ACCOUNT'; account: Account }
   | { type: 'DELETE_ACCOUNT'; id: string }
   | { type: 'ADD_CATEGORY'; category: CategoryConfig }
@@ -109,6 +110,28 @@ function reducer(state: State, action: Action): State {
       return { ...state, autoInvestments: state.autoInvestments.map((a) => a.id === action.inv.id ? action.inv : a) };
     case 'DELETE_AUTO_INVESTMENT':
       return { ...state, autoInvestments: state.autoInvestments.filter((a) => a.id !== action.id) };
+    case 'APPLY_AUTO_INVEST_RESULT': {
+      // Upsert each returned holding into the current list
+      let rawHoldings = state.holdings.map(toRaw);
+      for (const h of action.updatedHoldings) {
+        const idx = rawHoldings.findIndex((e) => e.id === h.id);
+        if (idx >= 0) rawHoldings[idx] = h;
+        else rawHoldings = [...rawHoldings, h];
+      }
+      // Update the investments that were advanced
+      const autoInvestments = state.autoInvestments.map((a) => {
+        const updated = action.updatedInvestments.find((u) => u.id === a.id);
+        return updated ?? a;
+      });
+      // Write back to the account cache so switching away+back shows fresh data
+      const newCache = { holdings: rawHoldings, goals: state.goals, autoInvestments };
+      return {
+        ...state,
+        holdings: enrichHoldings(rawHoldings),
+        autoInvestments,
+        accountCache: { ...state.accountCache, [action.accountId]: newCache },
+      };
+    }
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.account] };
     case 'DELETE_ACCOUNT':
@@ -239,8 +262,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
         return fetch(`/api/auto-investments/execute?accountId=${id}&checkDue=true`, { method: 'POST' })
           .then((r) => r.json())
           .then(({ updatedHoldings, updatedInvestments }: { updatedHoldings: Holding[]; updatedInvestments: AutoInvestment[] }) => {
-            for (const h of updatedHoldings) dispatch({ type: 'UPSERT_HOLDING', holding: h });
-            for (const inv of updatedInvestments) dispatch({ type: 'UPDATE_AUTO_INVESTMENT', inv });
+            dispatch({ type: 'APPLY_AUTO_INVEST_RESULT', accountId: id, updatedHoldings, updatedInvestments });
           })
           .catch(() => { /* silent — investments catch up next visit */ });
       })
@@ -363,8 +385,7 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch(`/api/auto-investments/execute?id=${id}&accountId=${accountId}`, { method: 'POST' });
     if (!res.ok) { addToast('Failed to execute investment.'); return; }
     const { updatedHoldings, updatedInvestments } = await res.json() as { updatedHoldings: Holding[]; updatedInvestments: AutoInvestment[] };
-    for (const h of updatedHoldings) dispatch({ type: 'UPDATE_HOLDING', holding: h });
-    for (const inv of updatedInvestments) dispatch({ type: 'UPDATE_AUTO_INVESTMENT', inv });
+    dispatch({ type: 'APPLY_AUTO_INVEST_RESULT', accountId, updatedHoldings, updatedInvestments });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAccountId, addToast]);
 

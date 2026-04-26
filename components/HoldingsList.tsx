@@ -296,16 +296,17 @@ export default function HoldingsList() {
                     'Value',
                     '% Portfolio',
                     'Category',
-                    'Sub-Category',
+                    'Sub',
                     'Brokerage',
                     '',
                   ] as const).map((h) => {
                     const sortKey = h === 'Value' ? 'value' : h === 'Category' ? 'category' : h === 'Brokerage' ? 'brokerage' : null;
                     const active = sortKey && sortCol === sortKey;
+                    const px = h === 'Sub' ? 'px-2' : 'px-4';
                     return sortKey ? (
                       <th key={h}
                         onClick={() => toggleSort(sortKey)}
-                        className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none"
+                        className={`text-left ${px} py-3 text-xs font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none`}
                         style={{ color: active ? '#6366f1' : '#94a3b8' }}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -316,7 +317,7 @@ export default function HoldingsList() {
                         </span>
                       </th>
                     ) : (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      <th key={h} className={`text-left ${px} py-3 text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap`}>{h}</th>
                     );
                   })}
                 </tr>
@@ -348,7 +349,7 @@ export default function HoldingsList() {
                         {h.category}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-400 text-xs">{h.subCategory || '—'}</td>
+                    <td className="px-2 py-3.5 text-slate-400 text-xs whitespace-nowrap">{h.subCategory || '—'}</td>
                     <td className="px-4 py-3.5">
                       <span
                         className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold text-white"

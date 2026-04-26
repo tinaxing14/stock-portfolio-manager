@@ -164,7 +164,24 @@ export default function Sidebar() {
               </div>
             )}
 
-            {/* Cash vs Invested allocation */}
+            {/* Overview link */}
+            <Link
+              href="/overview"
+              className="mt-3 flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+              style={pathname === '/overview'
+                ? { background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }
+                : { color: '#3a5070' }
+              }
+              onMouseEnter={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.color = '#7090a8'; }}
+              onMouseLeave={(e) => { if (pathname !== '/overview') (e.currentTarget as HTMLAnchorElement).style.color = '#3a5070'; }}
+            >
+              <span>Overview</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </Link>
+
+          {/* Cash vs Invested allocation */}
             {allocation && allocation.total > 0 && (
               <div className="mt-4 pt-3" style={{ borderTop: '1px solid #1a2535' }}>
                 <p className="text-xs font-semibold uppercase tracking-widest mb-2.5" style={{ color: '#3a5070' }}>Allocation</p>

@@ -2,19 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { usePortfolio } from '@/lib/PortfolioContext';
 import { formatCurrency } from '@/lib/utils';
 
+interface AllocationData {
+  total: number; totalCash: number; totalInvested: number;
+  cashPct: number; investedPct: number;
+  byAccount: { accountId: string; name: string; cash: number; invested: number; total: number }[];
+}
+
 /* ─── SVG icons ─────────────────────────────────────────── */
 const Icons = {
-  overview: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-    </svg>
-  ),
   dashboard: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -61,7 +61,6 @@ const Icons = {
 };
 
 const NAV = [
-  { href: '/overview', label: 'Overview',  icon: Icons.overview },
   { href: '/',         label: 'Dashboard', icon: Icons.dashboard },
   { href: '/holdings', label: 'Holdings',  icon: Icons.holdings },
   { href: '/goals',    label: 'Goals',     icon: Icons.goals },
@@ -86,11 +85,19 @@ function AccountAvatar({ name, type, active }: { name: string; type: string; act
 /* ─── Sidebar ───────────────────────────────────────────── */
 export default function Sidebar() {
   const pathname = usePathname();
-  const { accounts, currentAccountId, totalNetWorth, accountTotals, switchAccount, addAccount, deleteAccount } = usePortfolio();
+  const { accounts, currentAccountId, totalNetWorth, accountTotals, switchAccount, addAccount, deleteAccount, snapshotTick } = usePortfolio();
   const [addingAccount, setAddingAccount] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountType, setNewAccountType] = useState<'stock' | 'crypto'>('stock');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [allocation, setAllocation] = useState<AllocationData | null>(null);
+
+  useEffect(() => {
+    fetch('/api/portfolio-allocation')
+      .then((r) => r.json())
+      .then(setAllocation)
+      .catch(() => {});
+  }, [snapshotTick]);
 
   async function handleAddAccount() {
     const name = newAccountName.trim();
@@ -154,6 +161,63 @@ export default function Sidebar() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Cash vs Invested allocation */}
+            {allocation && allocation.total > 0 && (
+              <div className="mt-4 pt-3" style={{ borderTop: '1px solid #1a2535' }}>
+                <p className="text-xs font-semibold uppercase tracking-widest mb-2.5" style={{ color: '#3a5070' }}>Allocation</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                      <span className="text-xs" style={{ color: '#7090a8' }}>Invested</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: '#8ba8c0' }}>{formatCurrency(allocation.totalInvested)}</span>
+                      <span className="text-xs font-bold tabular-nums text-indigo-400">{allocation.investedPct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="text-xs" style={{ color: '#7090a8' }}>Cash</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold tabular-nums" style={{ color: '#8ba8c0' }}>{formatCurrency(allocation.totalCash)}</span>
+                      <span className="text-xs font-bold tabular-nums text-emerald-400">{allocation.cashPct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden flex" style={{ background: '#1a2535' }}>
+                    <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${allocation.investedPct}%` }} />
+                    <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${allocation.cashPct}%` }} />
+                  </div>
+                </div>
+
+                {/* Per-account mini breakdown */}
+                <div className="mt-3 space-y-2.5">
+                  {allocation.byAccount.map((acc) => {
+                    const invPct  = acc.total > 0 ? (acc.invested / acc.total) * 100 : 0;
+                    const cashPct = acc.total > 0 ? (acc.cash     / acc.total) * 100 : 0;
+                    return (
+                      <div key={acc.accountId}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs truncate" style={{ color: '#5a7090' }}>{acc.name}</span>
+                          <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                            <span className="text-xs tabular-nums text-indigo-400">{invPct.toFixed(0)}%</span>
+                            <span style={{ color: '#2a3a50' }}>·</span>
+                            <span className="text-xs tabular-nums text-emerald-400">{cashPct.toFixed(0)}%</span>
+                          </div>
+                        </div>
+                        <div className="h-1 rounded-full overflow-hidden flex" style={{ background: '#1a2535' }}>
+                          <div className="h-full bg-indigo-500/70 transition-all duration-500" style={{ width: `${invPct}%` }} />
+                          <div className="h-full bg-emerald-500/70 transition-all duration-500" style={{ width: `${cashPct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
